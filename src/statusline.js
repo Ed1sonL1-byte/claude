@@ -60,8 +60,6 @@ const PRICING = {
 // ============ Default config ============
 const DEFAULT_CONFIG = {
   theme: 'fire',
-  alert_daily: 10.0,
-  alert_weekly: 50.0,
   show_burn_rate: true,
   show_total: true,
   show_week: true,
@@ -209,29 +207,28 @@ function readStatsCache() {
 
 // ============ Historical stats: scan JSONL files ============
 
-function scanJsonlDir(dirPath, stats) {
-  let files;
+function scanDirRecursive(dirPath, stats, depth) {
+  if (depth > 3) return; // prevent infinite recursion
+  let entries;
   try {
-    files = fs.readdirSync(dirPath).filter(f => f.endsWith('.jsonl'));
+    entries = fs.readdirSync(dirPath, { withFileTypes: true });
   } catch (e) { return; }
 
-  for (const file of files) {
-    const filePath = path.join(dirPath, file);
+  // Scan JSONL files in this directory
+  const jsonlFiles = entries.filter(e => e.isFile() && e.name.endsWith('.jsonl'));
+  for (const file of jsonlFiles) {
+    const filePath = path.join(dirPath, file.name);
     try {
       const content = fs.readFileSync(filePath, 'utf8');
       const lines = content.split('\n');
-
       for (const line of lines) {
         if (!line.trim()) continue;
         try {
           const entry = JSON.parse(line);
           if (entry.type !== 'assistant') continue;
-
           const ts = entry.timestamp || entry.createdAt;
           if (!ts) continue;
           const day = ts.slice(0, 10);
-
-          // Primary: compute cost from message.usage + message.model
           const msg = entry.message || {};
           const usage = msg.usage;
           if (usage) {
@@ -247,13 +244,18 @@ function scanJsonlDir(dirPath, stats) {
             stats.totalTokens += (usage.input_tokens || 0) + (usage.output_tokens || 0)
               + (usage.cache_read_input_tokens || 0) + (usage.cache_creation_input_tokens || 0);
           } else if (entry.costUSD) {
-            // Fallback: use costUSD if available
             stats.daily[day] = (stats.daily[day] || 0) + entry.costUSD;
             stats.totalCost += entry.costUSD;
           }
-        } catch (e) { /* skip malformed line */ }
+        } catch (e) { /* skip */ }
       }
-    } catch (e) { /* skip unreadable file */ }
+    } catch (e) { /* skip */ }
+  }
+
+  // Recurse into subdirectories
+  const subdirs = entries.filter(e => e.isDirectory());
+  for (const sub of subdirs) {
+    scanDirRecursive(path.join(dirPath, sub.name), stats, depth + 1);
   }
 }
 
@@ -263,23 +265,10 @@ function scanProjectsForHistory() {
   if (!fs.existsSync(PROJECTS_DIR)) return stats;
 
   try {
-    const projects = fs.readdirSync(PROJECTS_DIR);
+    const projects = fs.readdirSync(PROJECTS_DIR, { withFileTypes: true });
     for (const proj of projects) {
-      const projPath = path.join(PROJECTS_DIR, proj);
-      try {
-        if (!fs.statSync(projPath).isDirectory()) continue;
-      } catch (e) { continue; }
-
-      // Scan main JSONL files
-      scanJsonlDir(projPath, stats);
-
-      // Scan subagent JSONL files
-      const subagentsDir = path.join(projPath, 'subagents');
-      try {
-        if (fs.existsSync(subagentsDir) && fs.statSync(subagentsDir).isDirectory()) {
-          scanJsonlDir(subagentsDir, stats);
-        }
-      } catch (e) { /* ignore */ }
+      if (!proj.isDirectory()) continue;
+      scanDirRecursive(path.join(PROJECTS_DIR, proj.name), stats, 0);
     }
   } catch (e) { /* skip errors */ }
 
@@ -511,10 +500,7 @@ function render(sessionData, historyStats, config) {
     .replace('Opus', 'O')
     .replace('Haiku', 'H');
 
-  // Alert check: if daily cost exceeds threshold, override model color
-  const alertActive = todayCost >= config.alert_daily;
-  const weekAlertActive = weekCost >= config.alert_weekly;
-  const modelColor = (alertActive || weekAlertActive) ? `${C.bold}\x1b[91m` : `${C.bold}${theme.model}`;
+  const modelColor = `${C.bold}${theme.model}`;
 
   // Build statusline
   const parts = [];
@@ -543,14 +529,6 @@ function render(sessionData, historyStats, config) {
   // Total
   if (config.show_total) {
     parts.push(`${theme.total}\u603B\u8BA1 ${formatCost(totalCost)}${C.reset}`);
-  }
-
-  // Alert indicator
-  if (alertActive) {
-    parts.push(`${C.bold}${C.bred}\u26A0\u{FE0F}\u65E5\u8D85\u9884\u7B97${C.reset}`);
-  }
-  if (weekAlertActive) {
-    parts.push(`${C.bold}${C.bred}\u26A0\u{FE0F}\u5468\u8D85\u9884\u7B97${C.reset}`);
   }
 
   const separator = ` ${C.gray}|${C.reset} `;

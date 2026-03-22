@@ -191,28 +191,27 @@ function readStatsCache() {
   return result;
 }
 
-function scanJsonlDir(dirPath, stats) {
-  let files;
+function scanDirRecursive(dirPath, stats, depth) {
+  if (depth > 3) return;
+  let entries;
   try {
-    files = fs.readdirSync(dirPath).filter(f => f.endsWith('.jsonl'));
+    entries = fs.readdirSync(dirPath, { withFileTypes: true });
   } catch (e) { return; }
 
-  for (const file of files) {
-    const filePath = path.join(dirPath, file);
+  const jsonlFiles = entries.filter(e => e.isFile() && e.name.endsWith('.jsonl'));
+  for (const file of jsonlFiles) {
+    const filePath = path.join(dirPath, file.name);
     try {
       const content = fs.readFileSync(filePath, 'utf8');
       const lines = content.split('\n');
-
       for (const line of lines) {
         if (!line.trim()) continue;
         try {
           const entry = JSON.parse(line);
           if (entry.type !== 'assistant') continue;
-
           const ts = entry.timestamp || entry.createdAt;
           if (!ts) continue;
           const day = ts.slice(0, 10);
-
           const msg = entry.message || {};
           const usage = msg.usage;
           if (usage) {
@@ -235,6 +234,11 @@ function scanJsonlDir(dirPath, stats) {
       }
     } catch (e) { /* skip */ }
   }
+
+  const subdirs = entries.filter(e => e.isDirectory());
+  for (const sub of subdirs) {
+    scanDirRecursive(path.join(dirPath, sub.name), stats, depth + 1);
+  }
 }
 
 function scanProjectsForHistory() {
@@ -243,21 +247,10 @@ function scanProjectsForHistory() {
   if (!fs.existsSync(PROJECTS_DIR)) return stats;
 
   try {
-    const projects = fs.readdirSync(PROJECTS_DIR);
+    const projects = fs.readdirSync(PROJECTS_DIR, { withFileTypes: true });
     for (const proj of projects) {
-      const projPath = path.join(PROJECTS_DIR, proj);
-      try {
-        if (!fs.statSync(projPath).isDirectory()) continue;
-      } catch (e) { continue; }
-
-      scanJsonlDir(projPath, stats);
-
-      const subagentsDir = path.join(projPath, 'subagents');
-      try {
-        if (fs.existsSync(subagentsDir) && fs.statSync(subagentsDir).isDirectory()) {
-          scanJsonlDir(subagentsDir, stats);
-        }
-      } catch (e) { /* ignore */ }
+      if (!proj.isDirectory()) continue;
+      scanDirRecursive(path.join(PROJECTS_DIR, proj.name), stats, 0);
     }
   } catch (e) { /* skip */ }
 
