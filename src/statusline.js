@@ -405,7 +405,71 @@ function getSessionDataFromStdin(jsonStr) {
       cacheReadTokens,
       cacheWriteTokens,
       contextPct,
+      transcriptPath: data.transcript_path || '',
     };
+  } catch (e) {
+    return null;
+  }
+}
+
+// ============ Real-time session cost from transcript JSONL ============
+
+function calcSessionFromTranscript(transcriptPath) {
+  if (!transcriptPath) return null;
+  try {
+    if (!fs.existsSync(transcriptPath)) return null;
+    const content = fs.readFileSync(transcriptPath, 'utf8');
+    const lines = content.split('\n');
+    let totalCost = 0;
+    let totalTokens = 0;
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const entry = JSON.parse(line);
+        if (entry.type !== 'assistant') continue;
+        const msg = entry.message || {};
+        const usage = msg.usage;
+        if (!usage) continue;
+        const pricing = getPricing(msg.model || '');
+        const input = usage.input_tokens || 0;
+        const output = usage.output_tokens || 0;
+        const cacheRead = usage.cache_read_input_tokens || 0;
+        const cacheWrite = usage.cache_creation_input_tokens || 0;
+        totalCost += calcCost({ input, output, cacheRead, cacheWrite }, pricing);
+        totalTokens += input + output + cacheRead + cacheWrite;
+      } catch (e) { /* skip */ }
+    }
+
+    // Also scan subagents dir next to transcript
+    const sessionDir = path.dirname(transcriptPath);
+    const subagentsDir = path.join(sessionDir, path.basename(transcriptPath, '.jsonl'), 'subagents');
+    try {
+      if (fs.existsSync(subagentsDir)) {
+        const files = fs.readdirSync(subagentsDir).filter(f => f.endsWith('.jsonl'));
+        for (const file of files) {
+          const content2 = fs.readFileSync(path.join(subagentsDir, file), 'utf8');
+          for (const line of content2.split('\n')) {
+            if (!line.trim()) continue;
+            try {
+              const entry = JSON.parse(line);
+              if (entry.type !== 'assistant') continue;
+              const msg = entry.message || {};
+              const usage = msg.usage;
+              if (!usage) continue;
+              const pricing = getPricing(msg.model || '');
+              const input = usage.input_tokens || 0;
+              const output = usage.output_tokens || 0;
+              const cacheRead = usage.cache_read_input_tokens || 0;
+              const cacheWrite = usage.cache_creation_input_tokens || 0;
+              totalCost += calcCost({ input, output, cacheRead, cacheWrite }, pricing);
+              totalTokens += input + output + cacheRead + cacheWrite;
+            } catch (e) { /* skip */ }
+          }
+        }
+      }
+    } catch (e) { /* ignore */ }
+
+    return { cost: totalCost, tokens: totalTokens };
   } catch (e) {
     return null;
   }
@@ -451,8 +515,10 @@ function render(sessionData, historyStats, config) {
     sessionState = { sessionId: sessionData.sessionId, startTime: Date.now(), lastTokenCount: 0, lastTimestamp: 0 };
   }
 
-  // Session cost from Claude Code API
-  const currentSessionCost = sessionData?.sessionCost || 0;
+  // Session cost: real-time from transcript JSONL (no cache)
+  const transcriptData = calcSessionFromTranscript(sessionData?.transcriptPath);
+  const currentSessionCost = transcriptData ? transcriptData.cost : (sessionData?.sessionCost || 0);
+  const sessionTokens = transcriptData ? transcriptData.tokens : (sessionData?.totalSessionTokens || 0);
 
   // All costs come directly from JSONL scan (already includes current session)
   const todayCost = historyStats.daily?.[today] || 0;
@@ -471,7 +537,7 @@ function render(sessionData, historyStats, config) {
   // Burn rate
   let burnRate = 0;
   if (sessionData && config.show_burn_rate) {
-    burnRate = calcBurnRate(sessionData.totalSessionTokens, sessionState);
+    burnRate = calcBurnRate(sessionTokens, sessionState);
   }
 
   // Model name
@@ -488,8 +554,7 @@ function render(sessionData, historyStats, config) {
     burnStr = ` \u{1F525}${formatBurnRate(burnRate)}`;
   }
 
-  // Session tokens
-  const sessionTokens = sessionData?.totalSessionTokens || 0;
+
 
   // Build output: [Model] 🔥会话 $COST | 今日：TOKEN $COST RATE | 本周 $COST | 总计：TOKEN $COST
   let output = '';
