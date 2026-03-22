@@ -497,21 +497,20 @@ function render(sessionData, historyStats, config) {
   // [Model] - gray
   output += `\x1b[0;90m[${modelName}]\x1b[0m `;
 
-  // 🔥会话 session cost - themed
-  output += `${a}\u{1F525}\u4F1A\u8BDD\uFF1A${formatTokens(sessionTokens)} ${formatCost(currentSessionCost)}${r} `;
+  // 🔥会话 - themed
+  output += `${a}\u{1F525}\u4F1A\u8BDD ${formatCost(currentSessionCost)}${r} `;
 
   // | 今日 - themed
-  const todayTokens = historyStats.dailyTokens?.[today] || 0;
-  output += `| ${a}\u4ECA\u65E5\uFF1A${formatTokens(todayTokens)} ${formatCost(todayCost)}${burnStr}${r} `;
+  output += `| ${a}\u4ECA\u65E5 ${formatCost(todayCost)}${burnStr}${r} `;
 
   // | 本周 - themed
   if (config.show_week) {
-    output += `| ${a}\u672C\u5468\uFF1A${formatCost(weekCost)}${r} `;
+    output += `| ${a}\u672C\u5468 ${formatCost(weekCost)}${r} `;
   }
 
   // | 总计 - gray
   if (config.show_total) {
-    output += `| ${t}\u603B\u8BA1\uFF1A${formatTokens(historyStats.totalTokens || 0)} ${formatCost(totalCost)}${r}`;
+    output += `| ${t}\u603B\u8BA1 ${formatCost(totalCost)}${r}`;
   }
 
   process.stdout.write(output + '\n');
