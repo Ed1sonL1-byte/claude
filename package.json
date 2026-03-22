@@ -1,7 +1,7 @@
 {
-  "name": "@exbyte/token-flame",
-  "version": "1.1.0",
-  "description": "\u{1F525} Claude Code \u72B6\u6001\u680F\u63D2\u4EF6 - \u5B9E\u65F6\u70E7\u94B1\u76D1\u63A7\uFF0C\u652F\u6301\u4F1A\u8BDD/\u4ECA\u65E5/\u672C\u5468/\u603B\u8BA1\u8FFD\u8E2A\uFF0C\u7CBE\u51C6\u591A\u6A21\u578B\u8BA1\u4EF7",
+  "name": "@ed1sonl1/token-flame",
+  "version": "1.2.0",
+  "description": "Claude Code statusline plugin - real-time token cost monitor with session/daily/weekly/total tracking",
   "main": "src/statusline.js",
   "bin": {
     "token-flame": "src/statusline.js"
