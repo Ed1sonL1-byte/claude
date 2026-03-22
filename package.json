@@ -1,0 +1,32 @@
+{
+  "name": "@exbyte/token-flame",
+  "version": "1.0.0",
+  "description": "🔥 Claude Code 状态栏插件 - 实时烧钱监控，支持会话/今日/本周/总计追踪",
+  "main": "src/statusline.js",
+  "bin": {
+    "token-flame": "src/statusline.js"
+  },
+  "scripts": {
+    "postinstall": "node install.js",
+    "preuninstall": "node uninstall.js"
+  },
+  "keywords": [
+    "claude-code",
+    "statusline",
+    "token-monitor",
+    "cost-tracker",
+    "claude-plugin"
+  ],
+  "author": "Exbyte (Zelin Li)",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "src/",
+    "install.js",
+    "uninstall.js",
+    "README.md",
+    "LICENSE"
+  ]
+}
