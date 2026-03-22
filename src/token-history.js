@@ -191,6 +191,52 @@ function readStatsCache() {
   return result;
 }
 
+function scanJsonlDir(dirPath, stats) {
+  let files;
+  try {
+    files = fs.readdirSync(dirPath).filter(f => f.endsWith('.jsonl'));
+  } catch (e) { return; }
+
+  for (const file of files) {
+    const filePath = path.join(dirPath, file);
+    try {
+      const content = fs.readFileSync(filePath, 'utf8');
+      const lines = content.split('\n');
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const entry = JSON.parse(line);
+          if (entry.type !== 'assistant') continue;
+
+          const ts = entry.timestamp || entry.createdAt;
+          if (!ts) continue;
+          const day = ts.slice(0, 10);
+
+          const msg = entry.message || {};
+          const usage = msg.usage;
+          if (usage) {
+            const pricing = getPricing(msg.model || '');
+            const cost = calcCost({
+              input: usage.input_tokens || 0,
+              output: usage.output_tokens || 0,
+              cacheRead: usage.cache_read_input_tokens || 0,
+              cacheWrite: usage.cache_creation_input_tokens || 0,
+            }, pricing);
+            stats.daily[day] = (stats.daily[day] || 0) + cost;
+            stats.totalCost += cost;
+            stats.totalTokens += (usage.input_tokens || 0) + (usage.output_tokens || 0)
+              + (usage.cache_read_input_tokens || 0) + (usage.cache_creation_input_tokens || 0);
+          } else if (entry.costUSD) {
+            stats.daily[day] = (stats.daily[day] || 0) + entry.costUSD;
+            stats.totalCost += entry.costUSD;
+          }
+        } catch (e) { /* skip */ }
+      }
+    } catch (e) { /* skip */ }
+  }
+}
+
 function scanProjectsForHistory() {
   const stats = { daily: {}, totalCost: 0, totalTokens: 0 };
 
@@ -204,40 +250,14 @@ function scanProjectsForHistory() {
         if (!fs.statSync(projPath).isDirectory()) continue;
       } catch (e) { continue; }
 
-      let files;
+      scanJsonlDir(projPath, stats);
+
+      const subagentsDir = path.join(projPath, 'subagents');
       try {
-        files = fs.readdirSync(projPath).filter(f => f.endsWith('.jsonl'));
-      } catch (e) { continue; }
-
-      for (const file of files) {
-        const filePath = path.join(projPath, file);
-        try {
-          const content = fs.readFileSync(filePath, 'utf8');
-          const lines = content.split('\n').filter(l => l.trim());
-
-          for (const line of lines) {
-            try {
-              const entry = JSON.parse(line);
-              if (entry.type !== 'assistant' || !entry.costUSD) continue;
-
-              const ts = entry.timestamp || entry.createdAt;
-              if (!ts) continue;
-
-              const day = new Date(ts).toISOString().split('T')[0];
-              if (!stats.daily[day]) stats.daily[day] = 0;
-              stats.daily[day] += entry.costUSD;
-              stats.totalCost += entry.costUSD;
-
-              if (entry.usage) {
-                stats.totalTokens += (entry.usage.input_tokens || 0);
-                stats.totalTokens += (entry.usage.output_tokens || 0);
-                stats.totalTokens += (entry.usage.cache_read_input_tokens || 0);
-                stats.totalTokens += (entry.usage.cache_creation_input_tokens || 0);
-              }
-            } catch (e) { /* skip */ }
-          }
-        } catch (e) { /* skip */ }
-      }
+        if (fs.existsSync(subagentsDir) && fs.statSync(subagentsDir).isDirectory()) {
+          scanJsonlDir(subagentsDir, stats);
+        }
+      } catch (e) { /* ignore */ }
     }
   } catch (e) { /* skip */ }
 
