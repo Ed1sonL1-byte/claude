@@ -40,11 +40,12 @@ const C = {
 };
 
 // ============ Theme system ============
+// Matches burn-your-money style: model=gray, active=themed color, total=gray
 const THEMES = {
-  fire:    { model: C.bred, session: C.byellow, rate: C.orange, today: C.orange, week: C.bmagenta, total: C.gray },
-  ocean:   { model: '\x1b[34m', session: '\x1b[36m', rate: '\x1b[96m', today: '\x1b[34m', week: '\x1b[96m', total: C.gray },
-  forest:  { model: C.bgreen, session: C.green, rate: C.byellow, today: C.green, week: C.byellow, total: C.gray },
-  golden:  { model: '\x1b[1;33m', session: C.byellow, rate: C.yellow, today: '\x1b[1;33m', week: C.byellow, total: C.gray },
+  fire:    { active: '\x1b[31m', total: '\x1b[0;90m' },  // red
+  ocean:   { active: '\x1b[36m', total: '\x1b[0;90m' },  // cyan
+  forest:  { active: '\x1b[32m', total: '\x1b[0;90m' },  // green
+  golden:  { active: '\x1b[33m', total: '\x1b[0;90m' },  // yellow
 };
 
 // ============ Pricing config (USD per million tokens) ============
@@ -134,6 +135,11 @@ function formatCost(cost) {
   if (cost >= 100) return `$${cost.toFixed(0)}`;
   if (cost >= 10) return `$${cost.toFixed(1)}`;
   return `$${cost.toFixed(2)}`;
+}
+
+function formatBurnRate(rate) {
+  if (rate >= 1000) return `${(rate / 1000).toFixed(1)}K tok/s`;
+  return `${Math.round(rate)} tok/s`;
 }
 
 function formatTokens(count) {
@@ -239,10 +245,12 @@ function scanDirRecursive(dirPath, stats, depth) {
               cacheRead: usage.cache_read_input_tokens || 0,
               cacheWrite: usage.cache_creation_input_tokens || 0,
             }, pricing);
-            stats.daily[day] = (stats.daily[day] || 0) + cost;
-            stats.totalCost += cost;
-            stats.totalTokens += (usage.input_tokens || 0) + (usage.output_tokens || 0)
+            const tokCount = (usage.input_tokens || 0) + (usage.output_tokens || 0)
               + (usage.cache_read_input_tokens || 0) + (usage.cache_creation_input_tokens || 0);
+            stats.daily[day] = (stats.daily[day] || 0) + cost;
+            stats.dailyTokens[day] = (stats.dailyTokens[day] || 0) + tokCount;
+            stats.totalCost += cost;
+            stats.totalTokens += tokCount;
           } else if (entry.costUSD) {
             stats.daily[day] = (stats.daily[day] || 0) + entry.costUSD;
             stats.totalCost += entry.costUSD;
@@ -260,7 +268,7 @@ function scanDirRecursive(dirPath, stats, depth) {
 }
 
 function scanProjectsForHistory() {
-  const stats = { daily: {}, totalCost: 0, totalTokens: 0 };
+  const stats = { daily: {}, dailyTokens: {}, totalCost: 0, totalTokens: 0 };
 
   if (!fs.existsSync(PROJECTS_DIR)) return stats;
 
@@ -429,22 +437,6 @@ function calcBurnRate(currentTokens, sessionState) {
 
 // ============ Fire intensity icon ============
 
-function getFireEmoji(costPerHour) {
-  if (costPerHour > 20) return '\u{1F525}\u{1F525}\u{1F525}';
-  if (costPerHour > 10) return '\u{1F525}\u{1F525}';
-  if (costPerHour > 2)  return '\u{1F525}';
-  if (costPerHour > 0.5) return '\u{1F56F}\u{FE0F}';
-  return '\u{2744}\u{FE0F}';
-}
-
-function getBurnRateColor(rate) {
-  if (rate > 500) return C.fire;
-  if (rate > 200) return C.bred;
-  if (rate > 100) return C.orange;
-  if (rate > 50)  return C.yellow;
-  return C.green;
-}
-
 // ============ Main render function ============
 
 function render(sessionData, historyStats, config) {
@@ -482,47 +474,45 @@ function render(sessionData, historyStats, config) {
     burnRate = calcBurnRate(sessionData.totalSessionTokens, sessionState);
   }
 
-  // Clean model name: remove "(1M context)" etc, keep full name
-  let modelShort = sessionData?.model || 'Claude';
-  modelShort = modelShort
-    .replace(/\s*\(.*?\)\s*/g, '')
-    .replace('Claude ', '')
-    .replace('claude-', '')
-    .trim();
+  // Model name
+  let modelName = sessionData?.model || 'Claude';
+  modelName = modelName.replace('Claude ', '').replace('claude-', '').trim();
 
-  const modelColor = `${C.bold}${theme.model}`;
+  const a = theme.active;  // active color
+  const t = theme.total;   // total color (gray)
+  const r = C.reset;
 
-  // Build statusline
-  const parts = [];
-
-  // [Model]
-  parts.push(`${modelColor}[${modelShort}]${C.reset}`);
-
-  // Session cost
-  const sessionCostStr = formatCost(currentSessionCost);
-  parts.push(`${theme.session}\u4F1A\u8BDD ${sessionCostStr}${C.reset}`);
-
-  // Burn rate
+  // Burn rate string
+  let burnStr = '';
   if (burnRate > 0 && config.show_burn_rate) {
-    const brColor = getBurnRateColor(burnRate);
-    parts.push(`${brColor}${getFireEmoji(burnRate / 60)}${burnRate} tok/s${C.reset}`);
+    burnStr = ` \u{1F525}${formatBurnRate(burnRate)}`;
   }
 
-  // Today
-  parts.push(`${theme.today}\u4ECA\u65E5 ${formatCost(todayCost)}${C.reset}`);
+  // Session tokens
+  const sessionTokens = sessionData?.totalSessionTokens || 0;
 
-  // Week
+  // Build output: [Model] 🔥会话 $COST | 今日：TOKEN $COST RATE | 本周 $COST | 总计：TOKEN $COST
+  let output = '';
+
+  // [Model] - gray
+  output += `\x1b[0;90m[${modelName}]\x1b[0m `;
+
+  // 🔥会话 session cost - themed
+  output += `${a}\u{1F525}\u4F1A\u8BDD\uFF1A${formatTokens(sessionTokens)} ${formatCost(currentSessionCost)}${r} `;
+
+  // | 今日 - themed
+  const todayTokens = historyStats.dailyTokens?.[today] || 0;
+  output += `| ${a}\u4ECA\u65E5\uFF1A${formatTokens(todayTokens)} ${formatCost(todayCost)}${burnStr}${r} `;
+
+  // | 本周 - themed
   if (config.show_week) {
-    parts.push(`${theme.week}\u672C\u5468 ${formatCost(weekCost)}${C.reset}`);
+    output += `| ${a}\u672C\u5468\uFF1A${formatCost(weekCost)}${r} `;
   }
 
-  // Total
+  // | 总计 - gray
   if (config.show_total) {
-    parts.push(`${theme.total}\u603B\u8BA1 ${formatCost(totalCost)}${C.reset}`);
+    output += `| ${t}\u603B\u8BA1\uFF1A${formatTokens(historyStats.totalTokens || 0)} ${formatCost(totalCost)}${r}`;
   }
-
-  const separator = ` ${C.gray}|${C.reset} `;
-  const output = parts.join(separator);
 
   process.stdout.write(output + '\n');
 
