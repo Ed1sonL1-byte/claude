@@ -520,19 +520,28 @@ function render(sessionData, historyStats, config) {
   const currentSessionCost = transcriptData ? transcriptData.cost : (sessionData?.sessionCost || 0);
   const sessionTokens = transcriptData ? transcriptData.tokens : (sessionData?.totalSessionTokens || 0);
 
-  // All costs come directly from JSONL scan (already includes current session)
-  const todayCost = historyStats.daily?.[today] || 0;
-
-  // Week cost
-  let weekCost = 0;
+  // History costs from cached JSONL scan (up to 1 min stale)
+  const cachedTodayCost = historyStats.daily?.[today] || 0;
+  let cachedWeekCost = 0;
   if (historyStats.daily) {
     for (const [day, cost] of Object.entries(historyStats.daily)) {
-      if (day >= weekStart) weekCost += cost;
+      if (day >= weekStart) cachedWeekCost += cost;
     }
   }
+  const cachedTotalCost = historyStats.totalCost || 0;
 
-  // Total cost
-  const totalCost = historyStats.totalCost || 0;
+  // The cache includes the session's JSONL at scan time, but new requests
+  // since then are missing. Calculate delta: real-time session - cached session.
+  if (historyStats._cachedSessionCost === undefined) {
+    // First render after cache refresh: store current session cost
+    historyStats._cachedSessionCost = currentSessionCost;
+    saveCache(historyStats);
+  }
+  const sessionDelta = Math.max(0, currentSessionCost - (historyStats._cachedSessionCost || 0));
+
+  const todayCost = cachedTodayCost + sessionDelta;
+  const weekCost = cachedWeekCost + sessionDelta;
+  const totalCost = cachedTotalCost + sessionDelta;
 
   // Burn rate
   let burnRate = 0;
