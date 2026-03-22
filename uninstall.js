@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 /**
- * 🔥 Token Flame - 卸载脚本
- * 从 ~/.claude/settings.json 移除 statusLine 配置
+ * Token Flame - Uninstall script
+ * Removes all Token Flame files and restores settings.json
  */
 
 const fs = require('fs');
@@ -12,40 +12,66 @@ const os = require('os');
 const HOME = os.homedir();
 const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || path.join(HOME, '.claude');
 const SETTINGS_FILE = path.join(CLAUDE_DIR, 'settings.json');
-const STATS_FILE = path.join(CLAUDE_DIR, 'token-flame-stats.json');
+const CACHE_DIR = path.join(CLAUDE_DIR, 'cache');
+
+function safeUnlink(filePath) {
+  try {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      console.log(`\u{1F5D1}\u{FE0F}  \u5DF2\u5220\u9664 ${path.basename(filePath)}`);
+    }
+  } catch (e) { /* ignore */ }
+}
 
 function uninstall() {
-  console.log('\n🔥 Token Flame - 卸载中...\n');
+  console.log('\n\u{1F525} Token Flame - \u5378\u8F7D\u4E2D...\n');
 
-  // 清理 settings.json 中的 statusLine
+  // Clean settings.json statusLine
   if (fs.existsSync(SETTINGS_FILE)) {
     try {
       const settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
-      
-      // 恢复备份的 statusLine 配置
+
+      // Restore backed-up statusLine config
       if (settings._tokenFlameBackup_statusLine) {
         settings.statusLine = settings._tokenFlameBackup_statusLine;
         delete settings._tokenFlameBackup_statusLine;
-        console.log('📦 已恢复原有 statusLine 配置');
+        console.log('\u{1F4E6} \u5DF2\u6062\u590D\u539F\u6709 statusLine \u914D\u7F6E');
       } else {
         delete settings.statusLine;
-        console.log('🗑️  已移除 statusLine 配置');
+        console.log('\u{1F5D1}\u{FE0F}  \u5DF2\u79FB\u9664 statusLine \u914D\u7F6E');
       }
 
       fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
     } catch (e) {
-      console.log('⚠️  无法更新 settings.json，请手动移除 statusLine 字段');
+      console.log('\u26A0\u{FE0F}  \u65E0\u6CD5\u66F4\u65B0 settings.json\uFF0C\u8BF7\u624B\u52A8\u79FB\u9664 statusLine \u5B57\u6BB5');
     }
   }
 
-  // 清理缓存文件
-  if (fs.existsSync(STATS_FILE)) {
-    fs.unlinkSync(STATS_FILE);
-    console.log('🗑️  已删除缓存文件');
+  // Remove installed files
+  const filesToRemove = [
+    // Main statusline
+    path.join(CLAUDE_DIR, 'statusline.js'),
+    // History script
+    path.join(CLAUDE_DIR, 'scripts', 'token-flame-history.js'),
+    // Command files
+    path.join(CLAUDE_DIR, 'commands', 'burn-your-money.md'),
+    path.join(CLAUDE_DIR, 'commands', 'burn-your-money-stats.md'),
+    path.join(CLAUDE_DIR, 'commands', 'burn-your-money-export.md'),
+    path.join(CLAUDE_DIR, 'commands', 'burn-your-money-uninstall.md'),
+    // Cache and config files
+    path.join(CLAUDE_DIR, 'token-flame-stats.json'),
+    path.join(CACHE_DIR, 'token-flame-session.json'),
+    path.join(CACHE_DIR, 'token-flame-today.json'),
+    path.join(CACHE_DIR, 'token-flame-history.json'),
+    path.join(CLAUDE_DIR, 'token-flame-config.json'),
+  ];
+
+  for (const filePath of filesToRemove) {
+    safeUnlink(filePath);
   }
 
   console.log('');
-  console.log('✅ 卸载完成！重启 Claude Code 后状态栏将消失');
+  console.log('\u2705 \u5378\u8F7D\u5B8C\u6210\uFF01\u91CD\u542F Claude Code \u540E\u72B6\u6001\u680F\u5C06\u6D88\u5931');
   console.log('');
 }
 
