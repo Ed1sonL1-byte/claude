@@ -459,19 +459,11 @@ function render(sessionData, historyStats, config) {
     sessionState = { sessionId: sessionData.sessionId, startTime: Date.now(), lastTokenCount: 0, lastTimestamp: 0 };
   }
 
-  // Load and manage today state
-  let todayState = loadTodayState() || { date: today, accumulatedCost: 0, accumulatedTokens: 0, lastSessionCost: 0 };
-
-  // Calculate session cost delta for today tracking
+  // Session cost from Claude Code API
   const currentSessionCost = sessionData?.sessionCost || 0;
-  const sessionDelta = Math.max(0, currentSessionCost - (todayState.lastSessionCost || 0));
 
-  // Today cost = history today + accumulated cross-session + current session delta
-  const historyToday = historyStats.daily?.[today] || 0;
-  todayState.accumulatedCost += sessionDelta;
-  todayState.lastSessionCost = currentSessionCost;
-  todayState.date = today;
-  const todayCost = historyToday + todayState.accumulatedCost;
+  // All costs come directly from JSONL scan (already includes current session)
+  const todayCost = historyStats.daily?.[today] || 0;
 
   // Week cost
   let weekCost = 0;
@@ -480,10 +472,9 @@ function render(sessionData, historyStats, config) {
       if (day >= weekStart) weekCost += cost;
     }
   }
-  weekCost += todayState.accumulatedCost;
 
   // Total cost
-  const totalCost = (historyStats.totalCost || 0) + todayState.accumulatedCost;
+  const totalCost = historyStats.totalCost || 0;
 
   // Burn rate
   let burnRate = 0;
@@ -536,9 +527,8 @@ function render(sessionData, historyStats, config) {
 
   process.stdout.write(output + '\n');
 
-  // Save states
+  // Save session state (for burn rate tracking)
   saveSessionState(sessionState);
-  saveTodayState(todayState);
 }
 
 // ============ Entry point ============
