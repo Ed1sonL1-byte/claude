@@ -482,14 +482,13 @@ function render(sessionData, historyStats, config) {
     burnRate = calcBurnRate(sessionData.totalSessionTokens, sessionState);
   }
 
-  // Shorten model name
+  // Clean model name: remove "(1M context)" etc, keep full name
   let modelShort = sessionData?.model || 'Claude';
   modelShort = modelShort
+    .replace(/\s*\(.*?\)\s*/g, '')
     .replace('Claude ', '')
     .replace('claude-', '')
-    .replace('Sonnet', 'S')
-    .replace('Opus', 'O')
-    .replace('Haiku', 'H');
+    .trim();
 
   const modelColor = `${C.bold}${theme.model}`;
 
