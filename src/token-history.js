@@ -260,7 +260,7 @@ function scanProjectsForHistory() {
 function getHistoryData() {
   // Check cache first (5-min TTL)
   const cached = safeReadJSON(HISTORY_CACHE_FILE);
-  if (cached && cached._ts && (Date.now() - cached._ts) < 5 * 60 * 1000) {
+  if (cached && cached._ts && (Date.now() - cached._ts) < 60 * 1000) {
     return cached;
   }
 

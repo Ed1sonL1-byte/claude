@@ -290,7 +290,7 @@ function loadCache() {
     if (fs.existsSync(STATS_FILE)) {
       const data = JSON.parse(fs.readFileSync(STATS_FILE, 'utf8'));
       // Cache valid for 5 minutes
-      if (data._ts && (Date.now() - data._ts) < 5 * 60 * 1000) {
+      if (data._ts && (Date.now() - data._ts) < 60 * 1000) {
         return data;
       }
     }
