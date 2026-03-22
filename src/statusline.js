@@ -167,49 +167,39 @@ function readStatsCache() {
   const result = { daily: {}, totalCost: 0, totalTokens: 0, modelBreakdown: {} };
 
   try {
-    // Read dailyModelTokens for per-day per-model data
-    if (data.dailyModelTokens) {
-      for (const [day, models] of Object.entries(data.dailyModelTokens)) {
-        let dayCost = 0;
-        for (const [model, usage] of Object.entries(models)) {
-          const pricing = getPricing(model);
-          const tokens = {
-            input: usage.input_tokens || 0,
-            output: usage.output_tokens || 0,
-            cacheRead: usage.cache_read_input_tokens || 0,
-            cacheWrite: usage.cache_creation_input_tokens || 0,
-          };
-          const cost = calcCost(tokens, pricing);
-          dayCost += cost;
-
-          if (!result.modelBreakdown[model]) {
-            result.modelBreakdown[model] = { cost: 0, tokens: 0 };
-          }
-          result.modelBreakdown[model].cost += cost;
-          const totalTok = tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite;
-          result.modelBreakdown[model].tokens += totalTok;
-          result.totalTokens += totalTok;
-        }
-        result.daily[day] = (result.daily[day] || 0) + dayCost;
-        result.totalCost += dayCost;
-      }
-    }
-
-    // Read modelUsage for aggregate data (supplement if dailyModelTokens is missing)
-    if (data.modelUsage && !data.dailyModelTokens) {
+    // Read modelUsage for per-model aggregate data (camelCase fields)
+    if (data.modelUsage) {
       for (const [model, usage] of Object.entries(data.modelUsage)) {
         const pricing = getPricing(model);
         const tokens = {
-          input: usage.input_tokens || 0,
-          output: usage.output_tokens || 0,
-          cacheRead: usage.cache_read_input_tokens || 0,
-          cacheWrite: usage.cache_creation_input_tokens || 0,
+          input: usage.inputTokens || 0,
+          output: usage.outputTokens || 0,
+          cacheRead: usage.cacheReadInputTokens || 0,
+          cacheWrite: usage.cacheCreationInputTokens || 0,
         };
         const cost = calcCost(tokens, pricing);
         result.totalCost += cost;
         const totalTok = tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite;
         result.totalTokens += totalTok;
         result.modelBreakdown[model] = { cost, tokens: totalTok };
+      }
+    }
+
+    // Read dailyModelTokens (array format: [{date, tokensByModel}])
+    // Only has total token count per model per day, so distribute total cost proportionally
+    if (Array.isArray(data.dailyModelTokens)) {
+      for (const entry of data.dailyModelTokens) {
+        const day = entry.date;
+        if (!day || !entry.tokensByModel) continue;
+        let dayCost = 0;
+        for (const [model, tokenCount] of Object.entries(entry.tokensByModel)) {
+          // Use model's total cost ratio to estimate daily cost
+          const modelInfo = result.modelBreakdown[model];
+          if (modelInfo && modelInfo.tokens > 0) {
+            dayCost += (tokenCount / modelInfo.tokens) * modelInfo.cost;
+          }
+        }
+        result.daily[day] = (result.daily[day] || 0) + dayCost;
       }
     }
   } catch (e) { /* ignore */ }
@@ -363,13 +353,15 @@ function getSessionDataFromStdin(jsonStr) {
     const data = JSON.parse(jsonStr);
 
     const model = data.model?.display_name || data.model?.name || 'Claude';
-    const sessionCost = data.session?.cost_usd || data.total_cost_usd || 0;
-    const sessionId = data.session?.id || data.session_id || '';
+    const sessionCost = data.cost?.total_cost_usd || data.session?.cost_usd || data.total_cost_usd || 0;
+    const sessionId = data.session_id || data.session?.id || '';
 
-    const inputTokens = data.current_usage?.input_tokens || data.total_input_tokens || 0;
-    const outputTokens = data.current_usage?.output_tokens || data.total_output_tokens || 0;
-    const cacheReadTokens = data.current_usage?.cache_read_input_tokens || 0;
-    const cacheWriteTokens = data.current_usage?.cache_creation_input_tokens || 0;
+    const cw = data.context_window || {};
+    const cu = cw.current_usage || data.current_usage || {};
+    const inputTokens = cu.input_tokens || cw.total_input_tokens || data.total_input_tokens || 0;
+    const outputTokens = cu.output_tokens || cw.total_output_tokens || data.total_output_tokens || 0;
+    const cacheReadTokens = cu.cache_read_input_tokens || 0;
+    const cacheWriteTokens = cu.cache_creation_input_tokens || 0;
 
     const totalSessionTokens = inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens;
 

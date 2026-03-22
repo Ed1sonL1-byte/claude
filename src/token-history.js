@@ -146,43 +146,15 @@ function readStatsCache() {
   const result = { daily: {}, totalCost: 0, totalTokens: 0, modelBreakdown: {} };
 
   try {
-    if (data.dailyModelTokens) {
-      for (const [day, models] of Object.entries(data.dailyModelTokens)) {
-        let dayCost = 0;
-        for (const [model, usage] of Object.entries(models)) {
-          const pricing = getPricing(model);
-          const tokens = {
-            input: usage.input_tokens || 0,
-            output: usage.output_tokens || 0,
-            cacheRead: usage.cache_read_input_tokens || 0,
-            cacheWrite: usage.cache_creation_input_tokens || 0,
-          };
-          const cost = calcCost(tokens, pricing);
-          dayCost += cost;
-
-          if (!result.modelBreakdown[model]) {
-            result.modelBreakdown[model] = { cost: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
-          }
-          result.modelBreakdown[model].cost += cost;
-          result.modelBreakdown[model].inputTokens += tokens.input;
-          result.modelBreakdown[model].outputTokens += tokens.output;
-          result.modelBreakdown[model].cacheReadTokens += tokens.cacheRead;
-          result.modelBreakdown[model].cacheWriteTokens += tokens.cacheWrite;
-          result.totalTokens += tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite;
-        }
-        result.daily[day] = (result.daily[day] || 0) + dayCost;
-        result.totalCost += dayCost;
-      }
-    }
-
-    if (data.modelUsage && !data.dailyModelTokens) {
+    // Read modelUsage for per-model aggregate data (camelCase fields)
+    if (data.modelUsage) {
       for (const [model, usage] of Object.entries(data.modelUsage)) {
         const pricing = getPricing(model);
         const tokens = {
-          input: usage.input_tokens || 0,
-          output: usage.output_tokens || 0,
-          cacheRead: usage.cache_read_input_tokens || 0,
-          cacheWrite: usage.cache_creation_input_tokens || 0,
+          input: usage.inputTokens || 0,
+          output: usage.outputTokens || 0,
+          cacheRead: usage.cacheReadInputTokens || 0,
+          cacheWrite: usage.cacheCreationInputTokens || 0,
         };
         const cost = calcCost(tokens, pricing);
         result.totalCost += cost;
@@ -195,6 +167,23 @@ function readStatsCache() {
           cacheReadTokens: tokens.cacheRead,
           cacheWriteTokens: tokens.cacheWrite,
         };
+      }
+    }
+
+    // Read dailyModelTokens (array format: [{date, tokensByModel}])
+    if (Array.isArray(data.dailyModelTokens)) {
+      for (const entry of data.dailyModelTokens) {
+        const day = entry.date;
+        if (!day || !entry.tokensByModel) continue;
+        let dayCost = 0;
+        for (const [model, tokenCount] of Object.entries(entry.tokensByModel)) {
+          const modelInfo = result.modelBreakdown[model];
+          if (modelInfo && modelInfo.inputTokens + modelInfo.outputTokens + modelInfo.cacheReadTokens + modelInfo.cacheWriteTokens > 0) {
+            const modelTotalTokens = modelInfo.inputTokens + modelInfo.outputTokens + modelInfo.cacheReadTokens + modelInfo.cacheWriteTokens;
+            dayCost += (tokenCount / modelTotalTokens) * modelInfo.cost;
+          }
+        }
+        result.daily[day] = (result.daily[day] || 0) + dayCost;
       }
     }
   } catch (e) { /* ignore */ }
