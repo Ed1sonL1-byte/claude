@@ -1,6 +1,6 @@
 {
   "name": "@ed1sonl1/token-flame",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Claude Code statusline plugin - real-time token cost monitor with session/daily/weekly/total tracking",
   "main": "src/statusline.js",
   "bin": {

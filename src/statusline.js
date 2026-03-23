@@ -61,8 +61,8 @@ const PRICING = {
 // ============ Default config ============
 const DEFAULT_CONFIG = {
   theme: 'fire',
-  show_burn_rate: true,
-  show_total: true,
+  show_burn_rate: false,
+  show_total: false,
   show_week: true,
 };
 
@@ -549,9 +549,11 @@ function render(sessionData, historyStats, config) {
     burnRate = calcBurnRate(sessionTokens, sessionState);
   }
 
-  // Model name
+  // Model name - simplify to e.g. "Opus 4.6", "Sonnet 4.5"
   let modelName = sessionData?.model || 'Claude';
   modelName = modelName.replace('Claude ', '').replace('claude-', '').trim();
+  // Remove parenthetical like "(1M context)" and extra whitespace
+  modelName = modelName.replace(/\s*\(.*?\)/g, '').trim();
 
   const a = theme.active;  // active color
   const t = theme.total;   // total color (gray)
